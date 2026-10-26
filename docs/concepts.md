@@ -25,6 +25,12 @@ Clash 是界面、Mihomo 是内核；Tailscale 解决设备间连接，Xray 解�
 
 教程中的 `100.64.0.10` 仅说明格式；搭建时应读取自己服务器的实际 tailnet 地址。
 
+## 数据是否经过 Tailscale 官方服务器？
+
+不一定。控制面负责设备身份、连接信息和访问规则；真正传输数据时，设备可以直连，也可以通过 DERP 或已配置的 Peer Relay 中继。直连通常性能更好，中继用于其它路径不合适的情况，数据仍为设备间加密。
+
+完整过程、如何检查实际路径以及费用计算，见 [Tailscale 工作原理、免费流量与带宽](tailscale-network-and-cost.md)。
+
 ## 为什么不只用 Tailscale exit node？
 
 Exit node 适合简单的全局出口需求；若要按域名/IP 分流，还需要规则引擎决定去向。

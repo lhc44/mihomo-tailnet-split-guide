@@ -51,6 +51,7 @@ flowchart LR
 | 当前情况 | 从这里开始 |
 |---|---|
 | 还不理解这些软件分别做什么 | [原理与术语](docs/concepts.md) |
+| 想了解直连、中继、免费流量与速度 | [Tailscale 工作原理与带宽](docs/tailscale-network-and-cost.md) |
 | 想从头搭建 | [完整安装教程](docs/deployment.md) |
 | 节点空白、断网或必须开两个客户端 | [故障排查](docs/troubleshooting.md) |
 | 关心费用、手机、DNS 或公网 IP 变化 | [常见问题](docs/faq.md) |
