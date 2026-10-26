@@ -1,105 +1,136 @@
-# Windows 单客户端分流：Mihomo + 内置 Tailscale
+# Windows 智能分流教程：Clash Verge Rev + Tailscale
 
-一份脱敏、可复用的部署记录：服务器公网连接受阻时，通过 Tailscale 私有网络承载服务器代理；Windows 日常只运行 Clash Verge Rev，国内直连，其他流量按规则走自己的服务器。
+**国内直连，国外走自己的服务器；Windows 日常只开一个客户端。**
 
-**这里没有可直接使用的订阅、服务器凭据或设备身份。** 所有私人参数均由使用者在本地生成。示例 `100.64.0.10` 是虚构的 tailnet 地址，不是可连接的节点。
+这份教程介绍一种组合方式：用 Clash Verge Rev 决定哪些流量直连、哪些走代理，用其 Mihomo 内核内置的 Tailscale 连接服务器，再由服务器上的 Xray 访问互联网。配套脚本用于安装服务、生成配置、检查连接和恢复设置。
 
-## 最终结构
+> 适用范围：Windows 客户端 + 自有 Linux amd64 服务器。需要基本的服务器登录和命令行操作能力。这里不是现成的节点订阅或免费服务器服务。
 
-```text
-Windows / Clash Verge Rev（Mihomo 内核）
-  ├─ 国内域名 / 国内 IP / 局域网 → DIRECT → 本地网络
-  └─ 其他目标 → SERVER 代理组
-                  → SERVER-NODE（VLESS / XUDP）
-                  → TAILNET（Mihomo 内置 Tailscale）
-                  → 服务器 tailnet 地址:10808
-                  → Xray freedom → Internet
+## 它解决什么问题？
+
+常见需求是：国内网站保持本地速度，访问 Google、GitHub 等服务时才使用服务器，同时尽量少开软件。
+
+直接使用 Tailscale 全局出口很容易上手，但它与按域名/IP 规则分流是两回事。本教程让 Clash 负责分流，把 Tailscale 作为内部连接通道，而不是让全部流量交给独立 Tailscale 客户端。
+
+| 需求 | 本教程的做法 |
+|---|---|
+| 国内直连、国外代理 | Clash 规则判断去向 |
+| 电脑尽量只开一个软件 | 使用 Mihomo 内置 Tailscale |
+| 服务器公网路径不稳定 | 尝试经 tailnet 私网连接；前提是当前网络可接入 Tailscale |
+| Wi-Fi、热点切换，公网 IP 会变化 | 使用设备身份与私网连接，不绑定本机公网 IP |
+| 希望代理更多软件而不只是浏览器 | 浏览器验证后再启用 TUN |
+
+网络限制、中继可达性和服务器出口仍会影响效果。它不保证所有网络都可连接，也不保证一定比直连快。
+
+## 一张图理解整体结构
+
+```mermaid
+flowchart LR
+    A[Windows 应用] --> B[Clash 规则分流]
+    B -->|国内及局域网| C[DIRECT 本地网络]
+    B -->|其他目标| D[SERVER 代理组]
+    D --> E[Mihomo 内置 Tailscale]
+    E --> F[服务器私网 VLESS 入口]
+    F --> G[Xray 访问 Internet]
 ```
 
-- 单客户端是指 Windows 端日常只需要 Clash；服务器仍运行 Tailscale 和 Xray 两个服务。
-- 最终方案不依赖本机公网 IP 固定，不需要公网开放 `10808`，也不需要为链式代理启用 Linux IP 转发。
-- 原 Tailscale 全局出口可作为安装、授权和紧急回退通道，不是最终链路必须同时开启的客户端。
-- 国内/国外是域名及 IP 数据库分类结果，并不是对所有站点的永久保证。跨国服务、CDN、自建域名可能需要追加规则。
-- 可达性仍取决于当前网络能否接入 Tailscale 控制面及直连/中继路径；不承诺任意运营商、任意时间可用或固定速度。
+**“单客户端”只指 Windows 端。** 服务器仍运行 Tailscale 和 Xray 两个服务。独立 Windows Tailscale 客户端可以用来初次准备或应急，但日常链路不要求它同时连接。
 
-## 文件导览
+## 开始前准备什么？
 
-| 文件 | 用途 |
+- 可登录、可访问互联网的 **Linux amd64 服务器**，使用 systemd。
+- 一个自己的 **Tailscale 账号**，分别授权服务器和电脑内置节点。
+- Windows 安装 **Clash Verge Rev、Python 3.10+、PowerShell 7**。
+- 支持 `type: tailscale`、inline provider 和 VLESS XUDP 的 **Mihomo 内核**。
+- 当前网络可以完成 Tailscale 登录，并连接服务器 tailnet 地址。
+
+从仓库页面 **Code → Download ZIP** 下载并解压；服务器和电脑各准备一份。下文相对路径命令都在项目根目录执行。
+
+## 推荐阅读路线
+
+| 当前情况 | 从这里开始 |
 |---|---|
-| `server/install-tailscale-static.sh` | 可选：全新 amd64 Linux 的官方静态包安装 |
-| `server/enable-exit-node.sh` | 可选：先建立全局出口作为回退 |
-| `server/install-private-proxy.sh` | 安装只绑定 tailnet 地址的 VLESS 入口 |
-| `server/render_config.py` | 参数校验及服务器配置渲染 |
-| `server/repair-networkmanager-dns.sh` | 可选：修复云内网 DNS 与 CGNAT 网段冲突 |
-| `server/rollback-*.sh` | 各变更对应的回退，不删除已有设备身份 |
-| `client/generate_profile.py` | 本地生成带可见代理组的私人 YAML |
-| `client/Backup-Clash.ps1` / `Restore-Clash.ps1` | 备份、校验和恢复 Clash 设置 |
-| `client/Test-Split.ps1` / `probe_socks_udp.py` | HTTP 及 SOCKS UDP 连通性测试 |
-| `tools/check_publication.py` | 发布前文件白名单及敏感标记扫描 |
-| [部署说明](docs/deployment.md) | 从服务器到客户端的完整操作 |
-| [排障手册](docs/troubleshooting.md) | 真实踩坑的脱敏总结 |
-| [发布及脱敏](docs/publication.md) | 哪些内容永远不应提交 |
+| 还不理解这些软件分别做什么 | [原理与术语](docs/concepts.md) |
+| 想从头搭建 | [完整安装教程](docs/deployment.md) |
+| 节点空白、断网或必须开两个客户端 | [故障排查](docs/troubleshooting.md) |
+| 关心费用、手机、DNS 或公网 IP 变化 | [常见问题](docs/faq.md) |
 
-## 快速开始
+## 安装流程概览
 
-完整前提和备份要求见 [部署说明](docs/deployment.md)。不要将下面几步理解成无需授权、无需服务器的一键服务。
+### 1. 把服务器加入 Tailscale
 
-1. 安装并授权服务器 Tailscale，检查服务器能解析域名并访问互联网。
-2. 如需要，先配置并批准 Tailscale exit node，建立回退通道。
-3. 在服务器运行：
+按 [官方 Linux 安装说明](https://tailscale.com/download/linux) 安装并登录，确认服务器有 tailnet 地址且能解析域名。
 
-   ```bash
-   sudo bash server/install-private-proxy.sh
-   ```
+### 2. 在服务器安装私网代理
 
-4. 将服务器生成的 `server-info.json` **私下**保存到本机 `local/`，不要发到 Issue。
-5. 在 Windows PowerShell 7 中生成本机配置：
-
-   ```powershell
-   python -m pip install -r requirements.txt
-   $homeDir = Join-Path $env:APPDATA 'io.github.clash-verge-rev.clash-verge-rev'
-   python client/generate_profile.py `
-     --server-info local/server-info.json `
-     --state-dir "$homeDir/tailscale-split-state" `
-     --out local/split.yaml
-   ```
-
-6. Clash【订阅】导入 `local/split.yaml`，点击启用。初次触发代理请求后，在日志中找到内置 Tailscale 的设备授权链接，用自己的账号确认设备。
-7. 确认【代理】可见 `SERVER → SERVER-NODE`，模式为【规则】；先开【系统代理】，再断开原 Tailscale 连接，验证国内外网页。
-8. 浏览器验证正常后，再开启【TUN / 虚拟网卡】接管其他软件；按提示安装服务或确认管理员操作。
-
-## 为什么采用 inline provider
-
-某些 Clash Verge Rev 链式代理操作会清掉顶层 `proxies` 中的 `dialer-proxy`。源 YAML 看起来正确，但运行时 `SERVER` 失去 `TAILNET` 前置隧道，就会出现“原 Tailscale 一断开，国外全部超时”。
-
-本方案把 VLESS 节点放在 `proxy-providers.private-egress.payload` 中，保留 `dialer-proxy: TAILNET`，再通过 `SERVER` 选择组引用。无需下载第二份订阅，也避免“只有两个裸节点、代理组页面空白”的展示问题。
-
-这是针对所观察版本行为的兼容写法，不表示所有未来版本都有同样问题。详见 [上游实现](https://github.com/clash-verge-rev/clash-verge-rev/blob/dev/src-tauri/src/config/runtime.rs) 和 [Mihomo provider 文档](https://wiki.metacubex.one/config/proxy-providers/)。
-
-## 验证与边界
-
-该架构曾进行实机独立验证：停止原 Tailscale 连接后，Google、GitHub、国内网站可达；国内流量直连、国外流量使用服务器出口；SOCKS UDP DNS 查询和重启后连接通过。原始记录包含私人地址和设备信息，因此不放入仓库。
-
-**这些架构验证不等于此处泛化安装脚本已覆盖所有发行版、所有 TUN 模式或移动端。** 新环境需要按说明重新测试。仓库自动检查覆盖模板约束、错误参数、链式字段保留、Bash 语法和发布检查；不会在 CI 登录私人 tailnet 或自动执行服务器部署。
-
-本地检查：
+在服务器项目根目录执行：
 
 ```bash
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
-for file in server/*.sh; do bash -n "$file"; done
-python tools/check_publication.py
+sudo bash server/install-private-proxy.sh
 ```
 
-## 版本与参考
+它安装 Xray，只在 **Tailscale 私网地址 `:10808`** 监听，不需要为这个入口开放公网端口，并生成客户端所需的 `server-info.json`。
 
-- 服务器安装示例固定 Xray `v26.10.21`，下载文件 SHA256 在脚本内固定；升级时应同时审阅版本、资产和校验值。
-- 静态安装示例固定 Tailscale `1.104.2` / Linux amd64；已有安装直接复用，不强制重装。
-- Windows 需要支持 `type: tailscale`、inline provider、VLESS XUDP 的 Mihomo 构建；在对应内核上执行 `-t` 验证，而不是只看客户端版本。
-- [Tailscale exit nodes](https://tailscale.com/docs/features/exit-nodes)
-- [Mihomo Tailscale](https://wiki.metacubex.one/config/proxies/tailscale/)
-- [Mihomo DNS](https://wiki.metacubex.one/config/dns/)
+### 3. 在 Windows 生成配置
+
+将服务器参数文件保存到本机 `local/server-info.json`，在 **PowerShell 7** 执行：
+
+```powershell
+python -m pip install -r requirements.txt
+$homeDir = Join-Path $env:APPDATA 'io.github.clash-verge-rev.clash-verge-rev'
+python client/generate_profile.py `
+  --server-info local/server-info.json `
+  --state-dir "$homeDir/tailscale-split-state" `
+  --out local/split.yaml
+```
+
+便携版或自定义数据目录请替换 `$homeDir`；它应对应实际 Mihomo 的 `-d` 主目录。
+
+### 4. 导入 Clash，授权内置节点
+
+Clash【订阅】导入 `local/split.yaml` 并启用，选择【规则】。首次代理请求触发内置 Tailscale 初始化，按日志中的设备链接授权。
+
+【代理】应出现 **`SERVER → SERVER-NODE`**。
+
+### 5. 先验证浏览器，再开启 TUN
+
+先测试本地代理，确认独立 Tailscale 客户端断开时仍然工作。随后开启【系统代理】使用浏览器；需要覆盖更多应用，再开启【TUN / 虚拟网卡】。
+
+**只打开 Clash 窗口不等于接管流量。** 系统代理和 TUN 都关闭时，浏览器通常仍用原网络。每步操作与成功判据见 [完整安装教程](docs/deployment.md)。
+
+## 怎么判断真的成功？
+
+- [ ] 独立 Tailscale 客户端已断开，Clash 仍然工作。
+- [ ] Google、GitHub 和国内网站均可访问。
+- [ ] 【连接】中，国内测试目标为 `DIRECT`，国外测试目标为 `SERVER`。
+- [ ] 如需 UDP，SOCKS UDP 测试通过。
+- [ ] 如需全机接管，已开启 TUN 并测试目标软件，而不只是浏览器。
+- [ ] 重启电脑或切换网络后，连接可以恢复。
+
+域名/IP 规则依赖 GeoSite、GeoIP 数据库。跨国服务和 CDN 可能需要自定义规则，单次分类结果不是永久保证。
+
+## 需要撤回设置时
+
+先关 Clash【系统代理】与【TUN】恢复普通网络；如准备了独立 Tailscale 出口，可重新连接。服务器与 Clash 恢复脚本见 [回退与恢复](docs/deployment.md#7-回退与恢复)。
+
+## 配套脚本
+
+| 目录 | 内容 |
+|---|---|
+| `server/` | 私网代理安装、可选 Tailscale 安装、可选全局出口、DNS 修复及回退 |
+| `client/` | 配置生成、设置备份恢复、HTTP/UDP 测试 |
+| `tests/` | 配置约束与文档链接检查 |
+
+脚本不会代替读者完成账号授权。首次部署前请阅读完整教程，它们不是适配所有系统的一键安装器。
+
+## 版本与官方资料
+
+安装脚本固定 Xray `v26.10.21` 及其 SHA256；可选静态安装脚本固定 Tailscale `1.104.2` / Linux amd64。已有 Tailscale 可直接复用，升级时应重新校验配置和网络行为。
+
+- [Mihomo 内置 Tailscale](https://wiki.metacubex.one/config/proxies/tailscale/)
+- [Mihomo 代理集合](https://wiki.metacubex.one/config/proxy-providers/)
 - [Clash Verge 本地导入](https://www.clashverge.dev/guide/profile.html)
+- [Tailscale 出口节点](https://tailscale.com/docs/features/exit-nodes)
 - [Xray VLESS](https://xtls.github.io/config/inbounds/vless.html)
 
-本项目与以上软件无隶属关系。网络策略、服务套餐和中继可达性会变化；免费软件不代表服务器及流量永远免费。
+本项目与上述软件无隶属关系。软件、组网服务、服务器和流量费用应分别考虑，以各服务当前规则为准。

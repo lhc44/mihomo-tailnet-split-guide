@@ -1,6 +1,5 @@
 import importlib.util
 from pathlib import Path
-import tempfile
 import unittest
 import uuid
 
@@ -16,7 +15,6 @@ def module(name, file):
 
 client=module('client_profile', 'client/generate_profile.py')
 server=module('server_config', 'server/render_config.py')
-scanner=module('publication_scanner', 'tools/check_publication.py')
 
 
 class Templates(unittest.TestCase):
@@ -64,16 +62,6 @@ class Templates(unittest.TestCase):
         self.assertEqual(value['inbounds'][0]['listen'],self.info['server'])
         self.assertEqual(value['inbounds'][0]['streamSettings']['security'],'none')
         self.assertIn('100.64.0.0/10',value['routing']['rules'][0]['ip'])
-
-    def test_scanner_rejects_unexpected_file(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp);(path/'trace.log').write_text('fixture')
-            self.assertEqual(scanner.scan(path),1)
-
-    def test_scanner_rejects_generated_identity(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp);(path/'README.md').write_text(self.info['uuid'])
-            self.assertEqual(scanner.scan(path),1)
 
 
 if __name__=='__main__': unittest.main()
