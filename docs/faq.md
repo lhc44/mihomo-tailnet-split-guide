@@ -14,6 +14,17 @@
 
 Personal 当前为个人非商业用途的免费套餐，列有 6 位用户、不限 user devices 等资源规则；服务器和手机热点流量仍由各自提供商计算。详见 [完整解释与官方来源](tailscale-network-and-cost.md)。
 
+## 每月 1000 分钟，会用完就断网吗？
+
+**1000 分钟针对临时计算资源，不是普通电脑或常驻服务器的上网时长。**
+
+- `ephemeral: false`：非临时（持久）节点，离线后保留设备身份，适合日常电脑、长期使用的设备。
+- `ephemeral: true`：临时节点，离线后自动回收，适合短期容器、自动构建等一次性任务。
+
+本教程采用非临时客户端，适合“服务器常驻、电脑偶尔连接”，不会因普通联网累计 1000 分钟就停用。**设备密钥到期是另一项独立设置**，届时可能需要重新认证；持久不等于永久免登录。
+
+参考：[官方套餐](https://tailscale.com/pricing) · [临时节点](https://tailscale.com/docs/features/ephemeral-nodes) · [密钥到期](https://tailscale.com/docs/features/access-control/key-expiry)。
+
 ## 本机公网 IP 经常变化怎么办？
 
 节点配置不绑定本机公网 IP。切换 Wi-Fi、热点或运营商后会重建连接，仍可能短暂断流。如果服务器被删除后注册成新设备，应重新核对它的 tailnet 地址。

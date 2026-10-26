@@ -37,6 +37,10 @@ Exit node 适合简单的全局出口需求；若要按域名/IP 分流，还需
 
 本教程让内置 Tailscale 只连接服务器私网 VLESS 入口，由 Xray 出站。因此 Windows 日常只需 Clash，不用给内置节点填 `exit-node`，Linux 也不需要为这条应用层链路开启 IP 转发。已有 exit node 可保留作准备和应急通道。
 
+## “持久设备”是另一种网络模式吗？
+
+不是。持久/临时描述离线后是否保留设备身份；直连/中继描述数据传输路径；密钥到期则是认证期限，三者相互独立。`ephemeral: false` 适合日常设备，但不代表永久免认证。见 [常见问题](faq.md)。
+
 ## 为什么叠加 VLESS 和 Tailscale？
 
 VLESS 表达“请服务器替我访问目标”，Tailscale 提供到服务器的私网通道。`dialer-proxy: TAILNET` 指定先通过内置隧道连接，再发送 VLESS 请求。

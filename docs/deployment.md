@@ -95,6 +95,8 @@ python client/generate_profile.py `
 
 **成功判据：** 生成 `local/split.yaml`，其中有 `TAILNET`、`private-egress` 和 `SERVER` 代理组。生成器在输出文件已存在时停止；修改配置前先保留上一份可用版本。
 
+生成器设为 `ephemeral: false`，适合保留身份的日常客户端；设备密钥到期策略独立设置，详见 [常见问题](faq.md)。
+
 `$homeDir` 应是实际 Mihomo 的 `-d` 数据目录。便携版或自定义数据目录需要调整，`state-dir` 也必须位于该目录允许的范围内。
 
 可在导入前校验（将 `$core` 替换为实际安装位置）：
@@ -118,6 +120,8 @@ $core = 'C:/Apps/ClashVerge/verge-mihomo.exe'
 
 4. 初次尚未授权时，测试可能失败；打开 Clash 日志，找到内置 Tailscale 的设备绑定链接，用同一 Tailscale 账号授权电脑节点。
 5. 授权完成后重新执行测试。服务器和电脑内置节点是两台独立设备，都需要加入自己的 tailnet。
+
+在控制台同时核对设备的 Ephemeral 标记、身份标签和密钥到期时间，以实际注册状态为准。
 
 如果初次访问控制面需要临时通道，可借用已经可用的独立 Tailscale 出口。安装过程中借它联网很正常，但下一步要断开它再测试，否则还不能确认单客户端独立工作。
 
