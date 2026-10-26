@@ -25,6 +25,17 @@ Personal 当前为个人非商业用途的免费套餐，列有 6 位用户、�
 
 参考：[官方套餐](https://tailscale.com/pricing) · [临时节点](https://tailscale.com/docs/features/ephemeral-nodes) · [密钥到期](https://tailscale.com/docs/features/access-control/key-expiry)。
 
+## 密钥到期后怎么续期？
+
+**续期就是重新登录授权，不是充值或重装。服务器和 Clash 内置节点要分别处理。**
+
+- **服务器**：先准备云控制台或备用 SSH 通道，再运行 `sudo tailscale up --force-reauth`，打开给出的链接完成授权。
+- **Clash 内置节点**：重启 Clash 内核并触发一次代理请求；出现重新登录链接时，打开日志里的链接授权。独立 Tailscale 客户端的登录不会替它续期。
+- **已过期而失联**：到 Tailscale 网页设备菜单选择 `Temporarily extend key`，获得 30 分钟恢复窗口，再完成认证；临时延长不是永久续期。
+- **可信常驻设备**：也可以在对应设备菜单选择 `Disable key expiry`，免去周期认证；仅对自己控制的可信设备使用，丢失或停用后应撤销。
+
+如果 Clash 没给出登录链接，或服务器只能经 tailnet 管理，先看 [具体恢复步骤与注意事项](troubleshooting.md#密钥到期后如何续期)，不要删身份目录或在唯一远程连接上贸然强制认证。
+
 ## 本机公网 IP 经常变化怎么办？
 
 节点配置不绑定本机公网 IP。切换 Wi-Fi、热点或运营商后会重建连接，仍可能短暂断流。如果服务器被删除后注册成新设备，应重新核对它的 tailnet 地址。
